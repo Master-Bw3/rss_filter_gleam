@@ -1,4 +1,7 @@
+import gleam/io
 import gleam/string_builder
+import rss_filter_gleam/response_helpers.{respond}
+import rss_filter_gleam/rss_filter
 import rss_filter_gleam/web
 import wisp.{type Request, type Response}
 
@@ -7,8 +10,11 @@ import wisp.{type Request, type Response}
 pub fn handle_request(req: Request) -> Response {
   // Apply the middleware stack for this request/response.
   use _req <- web.middleware(req)
-  // Later we'll use templates, but for now a string will do.
-  let body = string_builder.from_string("<h1>Hello, Joe!</h1>")
-  // Return a 200 OK response with the body and a HTML content type.
-  wisp.html_response(body, 200)
+
+  let path = wisp.path_segments(req)
+
+  case path {
+    [] -> rss_filter.handle_rss_request(req)
+    _ -> respond("This page does not exist", 404)
+  }
 }
