@@ -311,6 +311,10 @@ fn parse_item(
       // }
     }
 
+    //guid
+    ["guid", "item", "channel", "rss"], Data(data) ->
+      Ok(ItemBuilder(..builder, guid: Built(data)))
+
     _, _ -> Ok(builder)
   }
 }
