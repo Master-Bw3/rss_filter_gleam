@@ -17,9 +17,9 @@ pub fn handle_rss_request(req: Request) -> Response {
     [#("url", url), ..] -> {
       case get_feed(url) {
         Ok(feed) -> {
-          let rss = rss.from_xml(feed)
-          io.debug(rss)
-          respond(":]", 200)
+          let assert Ok(a) = rss.from_xml(feed)
+          let assert Ok(b) = rss.to_xml(a)
+          respond_xml(b, 200)
         }
         Error(_) -> {
           respond("an unexpected error has occured", 500)
@@ -28,7 +28,7 @@ pub fn handle_rss_request(req: Request) -> Response {
     }
     _ ->
       respond(
-        "please provied an rss feed in the url. example: localhost:8080/?url=https://ka3l.tumblr.com/rss</h1>",
+        "please provied an rss feed in the url. example: localhost:8080/?url=https://ka3l.tumblr.com/rss",
         400,
       )
   }
