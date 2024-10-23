@@ -6,10 +6,7 @@ import gleam/result
 import gleam/string
 import gleam/string_builder.{type StringBuilder}
 import gleam/uri.{type Uri}
-import xmleam/xml_builder.{
-  type BuilderError, Opt, block_tag, end_xml, new, option_block_tag,
-  option_content_tag, option_tag, tag,
-}
+import xmleam/xml_builder.{type BuilderError, block_tag, end_xml, new, tag}
 import xmlm.{Data, ElementEnd as End, ElementStart as Start, Name, Tag}
 
 pub type Channel {
@@ -27,7 +24,8 @@ pub type Item {
     title: Option(String),
     link: Option(Uri),
     description: Option(String),
-    pub_date: Option(Time),
+    //todo: switch to Birl time
+    pub_date: Option(String),
     guid: Option(String),
   )
 }
@@ -60,7 +58,7 @@ pub fn item_with_link(item: Item, link: Uri) {
   Item(..item, link: Some(link))
 }
 
-pub fn item_with_pub_date(item: Item, pub_date: Time) {
+pub fn item_with_pub_date(item: Item, pub_date: String) {
   Item(..item, pub_date: Some(pub_date))
 }
 
@@ -124,7 +122,8 @@ type ItemBuilder {
     title: BuildState(String),
     link: BuildState(Uri),
     description: BuildState(String),
-    pub_date: BuildState(Time),
+    //todo: switch to Birl time
+    pub_date: BuildState(String),
     guid: BuildState(String),
   )
 }
@@ -214,7 +213,7 @@ fn item_to_xml(xml: Result(StringBuilder, BuilderError), item: Item) {
 
   let item_tag = case item.pub_date {
     None -> item_tag
-    Some(pub_date) -> tag(item_tag, "pub_date", birl.to_date_string(pub_date))
+    Some(pub_date) -> tag(item_tag, "pubDate", pub_date)
   }
 
   let item_tag = case item.guid {
@@ -302,6 +301,15 @@ fn parse_item(
     //description
     ["description", "item", "channel", "rss"], Data(data) ->
       Ok(ItemBuilder(..builder, description: Built(data)))
+
+    //publication date
+    ["pubDate", "item", "channel", "rss"], Data(data) -> {
+      Ok(ItemBuilder(..builder, pub_date: Built(data)))
+      // case birl.parse(data) {
+      //   Ok(time) -> Ok(ItemBuilder(..builder, pub_date: Built(time)))
+      //   Error(_) -> Error(Nil)
+      // }
+    }
 
     _, _ -> Ok(builder)
   }

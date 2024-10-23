@@ -1,15 +1,10 @@
 import gleam/hackney
-import gleam/http
 import gleam/http/request
-import gleam/io
 import gleam/result
-import gleam/string_builder
 import gleam/uri
 import rss/rss
 import rss_filter_gleam/response_helpers.{respond, respond_xml}
-import rss_filter_gleam/web
 import wisp.{type Request, type Response}
-import xmlm
 
 pub fn handle_rss_request(req: Request) -> Response {
   let query = wisp.get_query(req)
