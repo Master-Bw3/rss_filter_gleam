@@ -1,4 +1,5 @@
 import birl.{type Time}
+import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -27,43 +28,20 @@ pub type Item {
     //todo: switch to Birl time
     pub_date: Option(String),
     guid: Option(String),
+    media_content: Option(Media),
   )
+}
+
+pub type Media {
+  Image(url: Uri, width: Int, height: Int)
 }
 
 pub fn channel(title: String, link: Uri, description: String) {
   Channel(title, link, description, None, [])
 }
 
-pub fn channel_with_pub_date(channel: Channel, pub_date: Time) {
-  Channel(..channel, pub_date: option.Some(pub_date))
-}
-
-pub fn channel_with_items(channel: Channel, items: List(Item)) {
-  Channel(..channel, items: items)
-}
-
 pub fn item() {
-  Item(None, None, None, None, None)
-}
-
-pub fn item_with_title(item: Item, title: String) {
-  Item(..item, title: Some(title))
-}
-
-pub fn item_with_description(item: Item, description: String) {
-  Item(..item, description: Some(description))
-}
-
-pub fn item_with_link(item: Item, link: Uri) {
-  Item(..item, link: Some(link))
-}
-
-pub fn item_with_pub_date(item: Item, pub_date: String) {
-  Item(..item, pub_date: Some(pub_date))
-}
-
-pub fn item_with_guid(item: Item, guid: String) {
-  Item(..item, guid: Some(guid))
+  Item(None, None, None, None, None, None)
 }
 
 //a: accumulator (Nil if not needed)
@@ -106,13 +84,13 @@ fn build_channel(builder: ChannelBuilder) {
 
   let channel = case builder {
     ChannelBuilder(pub_date: Built(pub_date), ..) ->
-      channel_with_pub_date(channel, pub_date)
+      Channel(..channel, pub_date: Some(pub_date))
     _ -> channel
   }
 
   //items
   case result.all(list.reverse(list.map(builder.items, build_item))) {
-    Ok(built_items) -> Ok(channel_with_items(channel, built_items))
+    Ok(built_items) -> Ok(Channel(..channel, items: built_items))
     Error(err) -> Error(err)
   }
 }
@@ -125,6 +103,7 @@ type ItemBuilder {
     //todo: switch to Birl time
     pub_date: BuildState(String),
     guid: BuildState(String),
+    media_content: BuildState(Media),
   )
 }
 
@@ -136,29 +115,35 @@ fn build_item(builder: ItemBuilder) {
   use item <- result.map(build_result)
 
   let item = case builder {
-    ItemBuilder(title: Built(title), ..) -> item_with_title(item, title)
+    ItemBuilder(title: Built(title), ..) -> Item(..item, title: Some(title))
     _ -> item
   }
 
   let item = case builder {
     ItemBuilder(description: Built(description), ..) ->
-      item_with_description(item, description)
+      Item(..item, description: Some(description))
     _ -> item
   }
 
   let item = case builder {
-    ItemBuilder(link: Built(link), ..) -> item_with_link(item, link)
+    ItemBuilder(link: Built(link), ..) -> Item(..item, link: Some(link))
     _ -> item
   }
 
   let item = case builder {
     ItemBuilder(pub_date: Built(pub_date), ..) ->
-      item_with_pub_date(item, pub_date)
+      Item(..item, pub_date: Some(pub_date))
     _ -> item
   }
 
   let item = case builder {
-    ItemBuilder(guid: Built(guid), ..) -> item_with_guid(item, guid)
+    ItemBuilder(guid: Built(guid), ..) -> Item(..item, guid: Some(guid))
+    _ -> item
+  }
+
+  let item = case builder {
+    ItemBuilder(media_content: Built(media), ..) ->
+      Item(..item, media_content: Some(media))
     _ -> item
   }
 
@@ -166,7 +151,7 @@ fn build_item(builder: ItemBuilder) {
 }
 
 fn unbuilt_item_builder() {
-  ItemBuilder(NotBuilt, NotBuilt, NotBuilt, NotBuilt, NotBuilt)
+  ItemBuilder(NotBuilt, NotBuilt, NotBuilt, NotBuilt, NotBuilt, NotBuilt)
 }
 
 pub fn from_xml(xml: String) {
@@ -174,7 +159,7 @@ pub fn from_xml(xml: String) {
   parse_channel(input)
   |> result.nil_error
   |> result.try(fn(x) { x.0 })
-  |> result.map(fn(x) { x.1 })
+  |> result.map(fn(x) { x.2 })
   |> result.try(build_channel)
 }
 
@@ -227,42 +212,59 @@ fn item_to_xml(xml: Result(StringBuilder, BuilderError), item: Item) {
 fn parse_channel(input: xmlm.Input) {
   use builder_result, signal <- xmlm.fold_signals(
     input,
-    Ok(#([], unbuilt_channel_builder())),
+    Ok(#([], [], unbuilt_channel_builder())),
   )
 
-  use #(path, builder) <- result.try(builder_result)
+  use #(path, attrs, builder) <- result.try(builder_result)
   case path, signal {
     //title
     ["title", "channel", "rss"], Data(data) ->
-      Ok(#(path, ChannelBuilder(..builder, title: Built(data))))
+      Ok(#(path, attrs, ChannelBuilder(..builder, title: Built(data))))
 
     //link
     ["link", "channel", "rss"], Data(data) ->
       uri.parse(data)
       |> result.map(fn(uri) { ChannelBuilder(..builder, link: Built(uri)) })
       |> result.nil_error
-      |> result.map(fn(uri) { #(path, uri) })
+      |> result.map(fn(uri) { #(path, attrs, uri) })
 
     //description
     ["description", "channel", "rss"], Data(data) ->
-      Ok(#(path, ChannelBuilder(..builder, description: Built(data))))
+      Ok(#(path, attrs, ChannelBuilder(..builder, description: Built(data))))
 
-    //items
+    //item data
     [_, "item", "channel", "rss"], Data(_) -> {
       case builder.items {
         [first, ..rest] ->
-          parse_item(path, first, signal)
+          parse_item(path, attrs, first, signal)
           |> result.map(fn(new_item) {
-            #(path, ChannelBuilder(..builder, items: [new_item, ..rest]))
+            #(path, attrs, ChannelBuilder(..builder, items: [new_item, ..rest]))
+          })
+        _ -> Error(Nil)
+      }
+    }
+
+    //item inner start
+    ["item", "channel", "rss"], Start(Tag(Name(_, tag), attributes)) -> {
+      case builder.items {
+        [first, ..rest] ->
+          parse_item([tag, ..path], attributes, first, signal)
+          |> result.map(fn(new_item) {
+            #(
+              [tag, ..path],
+              attributes,
+              ChannelBuilder(..builder, items: [new_item, ..rest]),
+            )
           })
         _ -> Error(Nil)
       }
     }
 
     //item start
-    ["channel", "rss"], Start(Tag(Name(_, "item"), _)) -> {
+    ["channel", "rss"], Start(Tag(Name(_, "item"), attributes)) -> {
       #(
         ["item", ..path],
+        attributes,
         ChannelBuilder(
           ..builder,
           items: [unbuilt_item_builder(), ..builder.items],
@@ -272,18 +274,20 @@ fn parse_channel(input: xmlm.Input) {
     }
 
     //other tag start
-    _, Start(Tag(Name(_, tag), _)) -> Ok(#([tag, ..path], builder))
+    _, Start(Tag(Name(_, tag), attributes)) ->
+      Ok(#([tag, ..path], attributes, builder))
 
     //tag end
-    _, End -> list.rest(path) |> result.map(fn(rest) { #(rest, builder) })
+    _, End -> list.rest(path) |> result.map(fn(rest) { #(rest, [], builder) })
 
     //ignored data and stuff
-    _, _ -> Ok(#(path, builder))
+    _, _ -> Ok(#(path, [], builder))
   }
 }
 
 fn parse_item(
   path: List(String),
+  attrs: List(xmlm.Attribute),
   builder: ItemBuilder,
   signal: xmlm.Signal,
 ) -> Result(ItemBuilder, Nil) {
@@ -315,11 +319,38 @@ fn parse_item(
     ["guid", "item", "channel", "rss"], Data(data) ->
       Ok(ItemBuilder(..builder, guid: Built(data)))
 
-    _, _ -> Ok(builder)
+    //media_content
+    ["content", "item", "channel", "rss"], Start(_) -> {
+      let url =
+        list.find(attrs, fn(x) { x.name.local == "url" })
+        |> result.map(fn(x) { x.value })
+        |> result.try(uri.parse)
+      let width =
+        list.find(attrs, fn(x) { x.name.local == "width" })
+        |> result.map(fn(x) { x.value })
+        |> result.try(int.parse)
+      let height =
+        list.find(attrs, fn(x) { x.name.local == "height" })
+        |> result.map(fn(x) { x.value })
+        |> result.try(int.parse)
+      case url, width, height {
+        Ok(url), Ok(width), Ok(height) ->
+          Ok(
+            ItemBuilder(
+              ..builder,
+              media_content: Built(Image(url, width, height)),
+            ),
+          )
+        _, _, _ -> Error(Nil)
+      }
+    }
+    _, _ -> {
+      Ok(builder)
+    }
   }
 }
 
-fn sanitize(input: String) {
+pub fn sanitize(input: String) {
   input
   |> string.replace("&", "&amp;")
   |> string.replace("<", "&lt;")

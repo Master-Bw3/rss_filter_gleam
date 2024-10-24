@@ -1,6 +1,12 @@
 import gleam/hackney
 import gleam/http/request
+import gleam/int
+import gleam/io
+import gleam/list
+import gleam/option
+import gleam/regex
 import gleam/result
+import gleam/string
 import gleam/uri
 import rss/rss
 import rss_filter_gleam/response_helpers.{respond, respond_xml}
@@ -13,8 +19,16 @@ pub fn handle_rss_request(req: Request) -> Response {
       case get_feed(url) {
         Ok(feed) -> {
           let assert Ok(a) = rss.from_xml(feed)
-          let assert Ok(b) = rss.to_xml(a)
-          respond_xml(b, 200)
+          let b =
+            rss.Channel(
+              ..a,
+              items: a.items
+                |> list.map(fix_deviantart_images)
+                |> list.filter(contains_image),
+            )
+
+          let assert Ok(c) = rss.to_xml(b)
+          respond_xml(c, 200)
         }
         Error(_) -> {
           respond("an unexpected error has occured", 500)
@@ -41,4 +55,53 @@ fn get_feed(url) -> Result(String, Nil) {
   )
 
   Ok(response.body)
+}
+
+fn fix_deviantart_images(item: rss.Item) {
+  case item.media_content {
+    option.Some(media) -> {
+      rss.Item(
+        ..item,
+        description: item.description
+          |> option.map(strip_images)
+          |> option.map(append_media(_, media)),
+      )
+    }
+    _ -> item
+  }
+}
+
+fn contains_image(item: rss.Item) -> Bool {
+  item.description
+  |> option.map(contains_img_tag)
+  |> option.unwrap(False)
+}
+
+fn contains_img_tag(text: String) {
+  //todo: make this better
+  text
+  |> string.contains("<img")
+}
+
+fn strip_images(text: String) {
+  let options = regex.Options(case_insensitive: False, multi_line: True)
+  let assert Ok(pattern) =
+    regex.compile("<img[^>]* src=\"([^\"]*)\"[^>]*>", options)
+
+  regex.replace(pattern, io.debug(text), "")
+}
+
+fn append_media(text: String, media: rss.Media) {
+  let image = case media {
+    rss.Image(url, width, height) ->
+      "<img src=\""
+      <> uri.to_string(url)
+      <> "\" width=\""
+      <> int.to_string(width)
+      <> "\" height=\""
+      <> int.to_string(height)
+      <> "\" />"
+  }
+
+  text <> image
 }
