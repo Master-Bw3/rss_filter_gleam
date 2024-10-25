@@ -24,15 +24,15 @@ pub fn handle_rss_request(req: Request) -> Response {
               ..a,
               items: a.items
                 |> list.map(fix_deviantart_images)
-                |> list.filter(contains_image),
+                |> list.filter(fn(item) {
+                  contains_image(item) || contains_video(item)
+                }),
             )
 
           let assert Ok(c) = rss.to_xml(b)
           respond_xml(c, 200)
         }
-        Error(_) -> {
-          respond("an unexpected error has occured", 500)
-        }
+        Error(_) -> respond("an unexpected error has occured", 500)
       }
     }
     _ ->
@@ -73,14 +73,14 @@ fn fix_deviantart_images(item: rss.Item) {
 
 fn contains_image(item: rss.Item) -> Bool {
   item.description
-  |> option.map(contains_img_tag)
+  |> option.map(string.contains(_, "<img"))
   |> option.unwrap(False)
 }
 
-fn contains_img_tag(text: String) {
-  //todo: make this better
-  text
-  |> string.contains("<img")
+fn contains_video(item: rss.Item) -> Bool {
+  item.description
+  |> option.map(string.contains(_, "<video"))
+  |> option.unwrap(False)
 }
 
 fn strip_images(text: String) {
@@ -88,11 +88,11 @@ fn strip_images(text: String) {
   let assert Ok(pattern) =
     regex.compile("<img[^>]* src=\"([^\"]*)\"[^>]*>", options)
 
-  regex.replace(pattern, io.debug(text), "")
+  regex.replace(pattern, text, "")
 }
 
 fn append_media(text: String, media: rss.Media) {
-  let image = case media {
+  let media = case media {
     rss.Image(url, width, height) ->
       "<img src=\""
       <> uri.to_string(url)
@@ -101,7 +101,13 @@ fn append_media(text: String, media: rss.Media) {
       <> "\" height=\""
       <> int.to_string(height)
       <> "\" />"
+    rss.Video(url) ->
+      "<video controls>"
+      <> "<source src=\""
+      <> uri.to_string(url)
+      <> "\" type=\"video/mp4\">"
+      <> "</video>"
   }
 
-  text <> image
+  text <> media
 }

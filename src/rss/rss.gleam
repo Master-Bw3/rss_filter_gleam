@@ -34,6 +34,7 @@ pub type Item {
 
 pub type Media {
   Image(url: Uri, width: Int, height: Int)
+  Video(url: Uri)
 }
 
 pub fn channel(title: String, link: Uri, description: String) {
@@ -158,7 +159,7 @@ pub fn from_xml(xml: String) {
   let input = xmlm.from_string(xml)
   parse_channel(input)
   |> result.nil_error
-  |> result.try(fn(x) { x.0 })
+  |> result.try(fn(x) { x.0 |> result.nil_error })
   |> result.map(fn(x) { x.2 })
   |> result.try(build_channel)
 }
@@ -225,7 +226,7 @@ fn parse_channel(input: xmlm.Input) {
     ["link", "channel", "rss"], Data(data) ->
       uri.parse(data)
       |> result.map(fn(uri) { ChannelBuilder(..builder, link: Built(uri)) })
-      |> result.nil_error
+      |> result.replace_error("invalid url: " <> data)
       |> result.map(fn(uri) { #(path, attrs, uri) })
 
     //description
@@ -240,7 +241,7 @@ fn parse_channel(input: xmlm.Input) {
           |> result.map(fn(new_item) {
             #(path, attrs, ChannelBuilder(..builder, items: [new_item, ..rest]))
           })
-        _ -> Error(Nil)
+        _ -> Error("builder.items missing an item")
       }
     }
 
@@ -256,7 +257,7 @@ fn parse_channel(input: xmlm.Input) {
               ChannelBuilder(..builder, items: [new_item, ..rest]),
             )
           })
-        _ -> Error(Nil)
+        _ -> Error("builder.items missing an item")
       }
     }
 
@@ -278,7 +279,10 @@ fn parse_channel(input: xmlm.Input) {
       Ok(#([tag, ..path], attributes, builder))
 
     //tag end
-    _, End -> list.rest(path) |> result.map(fn(rest) { #(rest, [], builder) })
+    _, End ->
+      list.rest(path)
+      |> result.replace_error("reached end tag but path is empty")
+      |> result.map(fn(rest) { #(rest, [], builder) })
 
     //ignored data and stuff
     _, _ -> Ok(#(path, [], builder))
@@ -290,7 +294,7 @@ fn parse_item(
   attrs: List(xmlm.Attribute),
   builder: ItemBuilder,
   signal: xmlm.Signal,
-) -> Result(ItemBuilder, Nil) {
+) -> Result(ItemBuilder, String) {
   case path, signal {
     //title
     ["title", "item", "channel", "rss"], Data(data) ->
@@ -300,7 +304,7 @@ fn parse_item(
     ["link", "item", "channel", "rss"], Data(data) ->
       uri.parse(data)
       |> result.map(fn(uri) { ItemBuilder(..builder, link: Built(uri)) })
-      |> result.nil_error
+      |> result.replace_error("invalid url: " <> data)
 
     //description
     ["description", "item", "channel", "rss"], Data(data) ->
@@ -333,15 +337,26 @@ fn parse_item(
         list.find(attrs, fn(x) { x.name.local == "height" })
         |> result.map(fn(x) { x.value })
         |> result.try(int.parse)
-      case url, width, height {
-        Ok(url), Ok(width), Ok(height) ->
+      let format =
+        list.find(attrs, fn(x) { x.name.local == "type" })
+        |> result.map(fn(x) { string.split(x.value, "/") })
+
+      case url, width, height, format {
+        Ok(url), Ok(width), Ok(height), _ ->
           Ok(
             ItemBuilder(
               ..builder,
               media_content: Built(Image(url, width, height)),
             ),
           )
-        _, _, _ -> Error(Nil)
+
+        Ok(url), _, _, Ok(["image", ..]) ->
+          Ok(ItemBuilder(..builder, media_content: Built(Image(url, 500, 400))))
+
+        Ok(url), _, _, Ok(["video", ..]) ->
+          Ok(ItemBuilder(..builder, media_content: Built(Video(url))))
+
+        _, _, _, _ -> Error("invalid media:content")
       }
     }
     _, _ -> {
