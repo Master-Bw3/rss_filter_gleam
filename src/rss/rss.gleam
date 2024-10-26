@@ -165,7 +165,9 @@ fn unbuilt_item_builder() {
 
 pub fn from_xml(xml: String) {
   //check if atom feed
-  let atom = string.contains(xml, "http://www.w3.org/2005/Atom")
+  let atom =
+    string.contains(xml, "http://www.w3.org/2005/Atom")
+    && !string.contains(xml, "<rss")
 
   case atom {
     True ->
