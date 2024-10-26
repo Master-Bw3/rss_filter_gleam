@@ -168,7 +168,7 @@ pub fn from_xml(xml: String) {
   let atom = string.contains(xml, "http://www.w3.org/2005/Atom")
 
   case atom {
-    True -> parse_atom_channel(xmlm.from_string(fix_atom_feed(xml)))
+    True -> parse_atom_channel(xmlm.from_string(xml))
     False -> parse_channel(xmlm.from_string(xml))
   }
   |> result.nil_error
