@@ -187,7 +187,7 @@ pub fn to_xml(channel: Channel) {
     |> block_tag("channel", {
       new()
       |> tag("title", sanitize(channel.title))
-      |> tag("description", sanitize(option.unwrap(channel.description, "")))
+      |> tag("description", sanitize(option.unwrap(channel.description, " ")))
       |> tag("link", uri.to_string(channel.link))
       |> list.fold(channel.items, _, item_to_xml)
     })
@@ -389,9 +389,9 @@ fn parse_atom_channel(input: xmlm.Input) {
 
   use #(path, attrs, builder) <- result.try(builder_result)
 
-  case path, signal {
+  case list.reverse(path), signal {
     //title
-    ["title", "feed"], Data(data) ->
+    ["feed", "title"], Data(data) ->
       Ok(#(path, attrs, ChannelBuilder(..builder, title: Built(data))))
 
     //link
@@ -410,11 +410,11 @@ fn parse_atom_channel(input: xmlm.Input) {
     }
 
     //description
-    ["summary", "feed"], Data(data) ->
+    ["feed", "summary"], Data(data) ->
       Ok(#(path, attrs, ChannelBuilder(..builder, description: Built(data))))
 
     //item data
-    [_, "entry", "feed"], Data(_) -> {
+    ["feed", "entry", ..], Data(_) -> {
       case builder.items {
         [first, ..rest] ->
           parse_atom_item(path, attrs, first, signal)
@@ -426,7 +426,7 @@ fn parse_atom_channel(input: xmlm.Input) {
     }
 
     //item inner start
-    ["entry", "feed"], Start(Tag(Name(_, tag), attributes)) -> {
+    ["feed", "entry", ..], Start(Tag(Name(_, tag), attributes)) -> {
       case builder.items {
         [first, ..rest] ->
           parse_atom_item([tag, ..path], attributes, first, signal)
@@ -467,21 +467,6 @@ fn parse_atom_channel(input: xmlm.Input) {
     //ignored data and stuff
     _, _ -> Ok(#(path, [], builder))
   }
-}
-
-pub fn fix_atom_feed(feed: String) {
-  // let assert Ok(pattern) = regex.from_string("(<(?!\\/)|<\\/)(?!feed|\\?xml)")
-
-  // regex.split(pattern, feed)
-  // |> list.fold("", fn(acc, str) {
-  //   case str {
-  //     "</" | "<" -> acc <> str <> "atom:"
-  //     _ -> acc <> str
-  //   }
-  // })
-  // |> string.replace("xmlns", "xmlns:atom")
-
-  let assert Ok(pattern) = regex.from_string("(<(?!\\/)|<\\/)(?!feed|\\?xml)")
 }
 
 fn parse_atom_item(
@@ -529,7 +514,7 @@ fn parse_atom_item(
       if tag == "img" || tag == "video"
     -> {
       let url =
-        list.find(attrs, fn(x) { x.name.local == "url" })
+        list.find(attrs, fn(x) { x.name.local == "src" })
         |> result.map(fn(x) { x.value })
         |> result.try(uri.parse)
       let width =

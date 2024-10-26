@@ -64,7 +64,7 @@ fn fix_deviantart_images(item: rss.Item) {
         ..item,
         description: item.description
           |> option.map(strip_images)
-          |> option.map(append_media(_, media)),
+          |> option.map(prepend_media(_, media)),
       )
     }
     _ -> item
@@ -91,7 +91,7 @@ fn strip_images(text: String) {
   regex.replace(pattern, text, "")
 }
 
-fn append_media(text: String, media: rss.Media) {
+fn prepend_media(text: String, media: rss.Media) {
   let media = case media {
     rss.Image(url, width, height) ->
       "<img src=\""
@@ -109,5 +109,5 @@ fn append_media(text: String, media: rss.Media) {
       <> "</video>"
   }
 
-  text <> media
+  media <> "<br>" <> text
 }
