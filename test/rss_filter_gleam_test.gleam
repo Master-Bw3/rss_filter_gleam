@@ -14,7 +14,5 @@ pub fn atom_feed_test() {
 
   let assert Ok(text) = read(from: path)
 
-  write("./test_modified.xml", rss.fix_atom_feed(text))
-
-  should.be_ok(rss.from_xml(text))
+  should.be_ok(io.debug(rss.from_xml(text)))
 }
