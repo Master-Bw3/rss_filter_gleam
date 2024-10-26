@@ -1,8 +1,10 @@
 import birl.{type Time}
+import gleam/bool
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/regex
 import gleam/result
 import gleam/string
 import gleam/string_builder.{type StringBuilder}
@@ -14,7 +16,7 @@ pub type Channel {
   Channel(
     title: String,
     link: Uri,
-    description: String,
+    description: Option(String),
     pub_date: Option(Time),
     items: List(Item),
   )
@@ -37,8 +39,8 @@ pub type Media {
   Video(url: Uri)
 }
 
-pub fn channel(title: String, link: Uri, description: String) {
-  Channel(title, link, description, None, [])
+pub fn channel(title: String, link: Uri) {
+  Channel(title, link, None, None, [])
 }
 
 pub fn item() {
@@ -72,16 +74,22 @@ fn build_channel(builder: ChannelBuilder) {
     ChannelBuilder(
       title: Built(title),
       link: Built(link),
-      description: Built(description),
+      description: _,
       pub_date: _,
       items: _,
-    ) -> Ok(channel(title, link, description))
+    ) -> Ok(channel(title, link))
 
     _ -> Error(Nil)
   }
 
   //optional fields
   use channel <- result.try(build_result)
+
+  let channel = case builder {
+    ChannelBuilder(description: Built(description), ..) ->
+      Channel(..channel, description: Some(description))
+    _ -> channel
+  }
 
   let channel = case builder {
     ChannelBuilder(pub_date: Built(pub_date), ..) ->
@@ -156,8 +164,13 @@ fn unbuilt_item_builder() {
 }
 
 pub fn from_xml(xml: String) {
-  let input = xmlm.from_string(xml)
-  parse_channel(input)
+  //check if atom feed
+  let atom = string.contains(xml, "http://www.w3.org/2005/Atom")
+
+  case atom {
+    True -> parse_atom_channel(xmlm.from_string(fix_atom_feed(xml)))
+    False -> parse_channel(xmlm.from_string(xml))
+  }
   |> result.nil_error
   |> result.try(fn(x) { x.0 |> result.nil_error })
   |> result.map(fn(x) { x.2 })
@@ -171,7 +184,7 @@ pub fn to_xml(channel: Channel) {
     |> block_tag("channel", {
       new()
       |> tag("title", sanitize(channel.title))
-      |> tag("description", sanitize(channel.description))
+      |> tag("description", sanitize(option.unwrap(channel.description, "")))
       |> tag("link", uri.to_string(channel.link))
       |> list.fold(channel.items, _, item_to_xml)
     })
@@ -355,6 +368,180 @@ fn parse_item(
 
         Ok(url), _, _, Ok(["video", ..]) ->
           Ok(ItemBuilder(..builder, media_content: Built(Video(url))))
+
+        _, _, _, _ -> Error("invalid media:content")
+      }
+    }
+    _, _ -> {
+      Ok(builder)
+    }
+  }
+}
+
+fn parse_atom_channel(input: xmlm.Input) {
+  use builder_result, signal <- xmlm.fold_signals(
+    input,
+    Ok(#([], [], unbuilt_channel_builder())),
+  )
+
+  use #(path, attrs, builder) <- result.try(builder_result)
+
+  case path, signal {
+    //title
+    ["title", "feed"], Data(data) ->
+      Ok(#(path, attrs, ChannelBuilder(..builder, title: Built(data))))
+
+    //link
+    ["feed"], Start(Tag(Name(_, "link"), attributes))
+      if builder.link == NotBuilt
+    -> {
+      let url =
+        list.find(attributes, fn(attr) { attr.name.local == "href" })
+        |> result.map(fn(attr) { attr.value })
+
+      url
+      |> result.try(uri.parse)
+      |> result.map(fn(uri) { ChannelBuilder(..builder, link: Built(uri)) })
+      |> result.replace_error("invalid url: " <> result.unwrap(url, ""))
+      |> result.map(fn(uri) { #(["link", ..path], attrs, uri) })
+    }
+
+    //description
+    ["summary", "feed"], Data(data) ->
+      Ok(#(path, attrs, ChannelBuilder(..builder, description: Built(data))))
+
+    //item data
+    [_, "entry", "feed"], Data(_) -> {
+      case builder.items {
+        [first, ..rest] ->
+          parse_atom_item(path, attrs, first, signal)
+          |> result.map(fn(new_item) {
+            #(path, attrs, ChannelBuilder(..builder, items: [new_item, ..rest]))
+          })
+        _ -> Error("builder.items missing an item")
+      }
+    }
+
+    //item inner start
+    ["entry", "feed"], Start(Tag(Name(_, tag), attributes)) -> {
+      case builder.items {
+        [first, ..rest] ->
+          parse_atom_item([tag, ..path], attributes, first, signal)
+          |> result.map(fn(new_item) {
+            #(
+              [tag, ..path],
+              attributes,
+              ChannelBuilder(..builder, items: [new_item, ..rest]),
+            )
+          })
+        _ -> Error("builder.items missing an item")
+      }
+    }
+
+    //item start
+    ["feed"], Start(Tag(Name(_, "entry"), attributes)) -> {
+      #(
+        ["entry", ..path],
+        attributes,
+        ChannelBuilder(
+          ..builder,
+          items: [unbuilt_item_builder(), ..builder.items],
+        ),
+      )
+      |> Ok
+    }
+
+    //other tag start
+    _, Start(Tag(Name(_, tag), attributes)) ->
+      Ok(#([tag, ..path], attributes, builder))
+
+    //tag end
+    _, End ->
+      list.rest(path)
+      |> result.replace_error("reached end tag but path is empty")
+      |> result.map(fn(rest) { #(rest, [], builder) })
+
+    //ignored data and stuff
+    _, _ -> Ok(#(path, [], builder))
+  }
+}
+
+pub fn fix_atom_feed(feed: String) {
+  // let assert Ok(pattern) = regex.from_string("(<(?!\\/)|<\\/)(?!feed|\\?xml)")
+
+  // regex.split(pattern, feed)
+  // |> list.fold("", fn(acc, str) {
+  //   case str {
+  //     "</" | "<" -> acc <> str <> "atom:"
+  //     _ -> acc <> str
+  //   }
+  // })
+  // |> string.replace("xmlns", "xmlns:atom")
+
+  let assert Ok(pattern) = regex.from_string("(<(?!\\/)|<\\/)(?!feed|\\?xml)")
+}
+
+fn parse_atom_item(
+  path: List(String),
+  attrs: List(xmlm.Attribute),
+  builder: ItemBuilder,
+  signal: xmlm.Signal,
+) -> Result(ItemBuilder, String) {
+  case list.reverse(path), signal {
+    //title
+    ["feed", "entry", "title"], Data(data) ->
+      Ok(ItemBuilder(..builder, title: Built(data)))
+
+    //link
+    ["feed", "entry", "link"], Start(_) if builder.link == NotBuilt -> {
+      let url =
+        list.find(attrs, fn(attr) { attr.name.local == "href" })
+        |> result.map(fn(attr) { attr.value })
+
+      url
+      |> result.try(uri.parse)
+      |> result.map(fn(uri) { ItemBuilder(..builder, link: Built(uri)) })
+      |> result.replace_error("invalid url: " <> result.unwrap(url, ""))
+    }
+
+    //description
+    ["feed", "entry", "summary"], Data(data) ->
+      Ok(ItemBuilder(..builder, description: Built(data)))
+
+    //publication date
+    ["feed", "entry", "updated"], Data(data) -> {
+      Ok(ItemBuilder(..builder, pub_date: Built(data)))
+      // case birl.parse(data) {
+      //   Ok(time) -> Ok(ItemBuilder(..builder, pub_date: Built(time)))
+      //   Error(_) -> Error(Nil)
+      // }
+    }
+
+    //guid
+    ["feed", "entry", "id"], Data(data) ->
+      Ok(ItemBuilder(..builder, guid: Built(data)))
+
+    //media_content
+    ["feed", "entry", "content", ..], Start(Tag(Name(_, tag), _))
+      if tag == "img" || tag == "video"
+    -> {
+      let url =
+        list.find(attrs, fn(x) { x.name.local == "url" })
+        |> result.map(fn(x) { x.value })
+        |> result.try(uri.parse)
+      let width =
+        list.find(attrs, fn(x) { x.name.local == "width" })
+        |> result.map(fn(x) { x.value })
+        |> result.try(int.parse)
+      let height =
+        list.find(attrs, fn(x) { x.name.local == "height" })
+        |> result.map(fn(x) { x.value })
+        |> result.try(int.parse)
+
+      case url, width, height, tag {
+        Ok(url), _, _, "img" -> {
+          Ok(ItemBuilder(..builder, media_content: Built(Image(url, 500, 400))))
+        }
 
         _, _, _, _ -> Error("invalid media:content")
       }
