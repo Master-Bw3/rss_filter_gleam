@@ -42,7 +42,7 @@
       nixosModules = rec {
         rss-filter = (import ./module.nix) self.packages;
         default = rss-filter;
-      }
+      };
 
       devshells.default = pkgs.mkShell {
         buildInputs = with pkgs; [
