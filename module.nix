@@ -1,11 +1,11 @@
-packages: { lib, ... }:
+packages: { lib, config, ... }:
 let
   cfg = config.services.rssFilter;
 in
 {
   options.services.rssFilter = {
     enable = lib.mkEnableOption "Enable Module";
-    package = mkPackageOption packages "rssFilter" { };
+    package = lib.mkPackageOption packages "rssFilter" { };
   };
 
   config = lib.mkIf cfg.enable {
