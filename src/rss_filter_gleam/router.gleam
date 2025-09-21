@@ -1,5 +1,3 @@
-import gleam/io
-import gleam/string_builder
 import rss_filter_gleam/response_helpers.{respond}
 import rss_filter_gleam/rss_filter
 import rss_filter_gleam/web

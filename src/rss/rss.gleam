@@ -1,13 +1,10 @@
 import birl.{type Time}
-import gleam/bool
 import gleam/int
-import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/regex
 import gleam/result
 import gleam/string
-import gleam/string_builder.{type StringBuilder}
+import gleam/string_tree.{type StringTree}
 import gleam/uri.{type Uri}
 import xmleam/xml_builder.{type BuilderError, block_tag, end_xml, new, tag}
 import xmlm.{Data, ElementEnd as End, ElementStart as Start, Name, Tag}
@@ -176,8 +173,8 @@ pub fn from_xml(xml: String) {
       )
     False -> parse_channel(xmlm.from_string(xml))
   }
-  |> result.nil_error
-  |> result.try(fn(x) { x.0 |> result.nil_error })
+  |> result.replace_error(Nil)
+  |> result.try(fn(x) { x.0 |> result.replace_error(Nil) })
   |> result.map(fn(x) { x.2 })
   |> result.try(build_channel)
 }
@@ -197,7 +194,7 @@ pub fn to_xml(channel: Channel) {
   |> end_xml()
 }
 
-fn item_to_xml(xml: Result(StringBuilder, BuilderError), item: Item) {
+fn item_to_xml(xml: Result(StringTree, BuilderError), item: Item) {
   let item_tag = new()
 
   let item_tag = case item.title {
@@ -284,10 +281,10 @@ fn parse_channel(input: xmlm.Input) {
       #(
         ["item", ..path],
         attributes,
-        ChannelBuilder(
-          ..builder,
-          items: [unbuilt_item_builder(), ..builder.items],
-        ),
+        ChannelBuilder(..builder, items: [
+          unbuilt_item_builder(),
+          ..builder.items
+        ]),
       )
       |> Ok
     }
@@ -448,10 +445,10 @@ fn parse_atom_channel(input: xmlm.Input) {
       #(
         ["entry", ..path],
         attributes,
-        ChannelBuilder(
-          ..builder,
-          items: [unbuilt_item_builder(), ..builder.items],
-        ),
+        ChannelBuilder(..builder, items: [
+          unbuilt_item_builder(),
+          ..builder.items
+        ]),
       )
       |> Ok
     }

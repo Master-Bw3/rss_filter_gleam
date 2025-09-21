@@ -1,8 +1,7 @@
-import gleam/io
 import gleeunit
 import gleeunit/should
 import rss/rss
-import simplifile.{read, write}
+import simplifile.{read}
 
 pub fn main() {
   gleeunit.main()
@@ -14,5 +13,5 @@ pub fn atom_feed_test() {
 
   let assert Ok(text) = read(from: path)
 
-  should.be_ok(io.debug(rss.from_xml(text)))
+  should.be_ok(echo rss.from_xml(text))
 }

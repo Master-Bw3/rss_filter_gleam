@@ -1,10 +1,9 @@
-import gleam/hackney
 import gleam/http/request
+import gleam/httpc
 import gleam/int
-import gleam/io
 import gleam/list
 import gleam/option
-import gleam/regex
+import gleam/regexp
 import gleam/result
 import gleam/string
 import gleam/uri
@@ -50,8 +49,8 @@ fn get_feed(url) -> Result(String, Nil) {
   use response <- result.try(
     request
     |> request.prepend_header("accept", "text/xml")
-    |> hackney.send
-    |> result.nil_error,
+    |> httpc.send
+    |> result.replace_error(Nil),
   )
 
   Ok(response.body)
@@ -84,11 +83,11 @@ fn contains_video(item: rss.Item) -> Bool {
 }
 
 fn strip_images(text: String) {
-  let options = regex.Options(case_insensitive: False, multi_line: True)
+  let options = regexp.Options(case_insensitive: False, multi_line: True)
   let assert Ok(pattern) =
-    regex.compile("<img[^>]* src=\"([^\"]*)\"[^>]*>", options)
+    regexp.compile("<img[^>]* src=\"([^\"]*)\"[^>]*>", options)
 
-  regex.replace(pattern, text, "")
+  regexp.replace(pattern, text, "")
 }
 
 fn prepend_media(text: String, media: rss.Media) {
