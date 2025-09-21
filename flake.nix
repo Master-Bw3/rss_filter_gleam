@@ -45,8 +45,6 @@
           default = rssFilter;
         };
 
-        nixosModules.rss-filter = (import ./module.nix) packages;
-
         devshells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             elixir
@@ -54,5 +52,8 @@
           ];
         };
       }
-    ));
+    ))
+    // {
+      nixosModules.rss-filter = (import ./module.nix) self.packages;
+    };
 }
