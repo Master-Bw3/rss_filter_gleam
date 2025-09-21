@@ -1,4 +1,4 @@
-packages: { ... }:
+packages: { lib, ... }:
 let
   cfg = config.services.rssFilter;
 in
